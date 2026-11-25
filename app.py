@@ -144,6 +144,10 @@ def mph_to_kmh(mph: float) -> float:
     return mph * 1.609344
 
 
+def in_to_mm(inches: float) -> float:
+    return inches * 25.4
+
+
 def blend(c1: str, c2: str, t: float) -> str:
     t = max(0.0, min(1.0, float(t)))
     a = [int(c1[i : i + 2], 16) for i in (1, 3, 5)]
@@ -206,7 +210,9 @@ with left:
     st.slider("Average wind today (mph)", 0.0, 20.0, step=0.1, key="wind", format="%.1f")
     st.caption(f"= {mph_to_kmh(st.session_state.wind):.1f} km/h")
     st.slider("Rain today (in)", 0.00, 3.00, step=0.01, key="rain", format="%.2f")
+    st.caption(f"= {in_to_mm(st.session_state.rain):.1f} mm")
     st.slider("Total rain over the last 7 days (in)", 0.00, 8.00, step=0.01, key="rain_7_days", format="%.2f")
+    st.caption(f"= {in_to_mm(st.session_state.rain_7_days):.1f} mm")
     st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
     st.caption(f"= {mph_to_kmh(st.session_state.wind_7_days):.1f} km/h")
 
