@@ -12,7 +12,9 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
-DATA_PATH = Path(__file__).parent / "data.xlsx"
+_HERE = Path(__file__).parent
+# Linux file names are case-sensitive: accept data.xlsx or Data.xlsx.
+DATA_PATH = next((p for p in (_HERE / "data.xlsx", _HERE / "Data.xlsx") if p.exists()), _HERE / "data.xlsx")
 SHEET_NAME = "CA_Weather_Fire_Dataset_1984-20"
 # Fire starts are not recorded after this date: later days are wrongly labelled "no fire".
 LAST_LABELLED_DATE = pd.Timestamp("2023-12-22")
