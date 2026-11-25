@@ -17,6 +17,7 @@ from model import (
     FEATURE_LABELS,
     FEATURES,
     MAX_DEPTH,
+    MIN_SAMPLES_LEAF,
     N_TREES,
     cross_validated_auc,
     danger_level,
@@ -304,7 +305,7 @@ with st.expander("About the model"):
     auc, importances = get_model_report()
     st.markdown(
         f"""
-- **Model:** Random Forest, {N_TREES} trees, max depth {MAX_DEPTH}, trained on {n_rows:,} days.
+- **Model:** Random Forest, {N_TREES} trees, max depth {MAX_DEPTH}, at least {MIN_SAMPLES_LEAF} days per leaf, trained on {n_rows:,} days.
 - **Features used:** {", ".join(FEATURE_LABELS[f] for f in FEATURES)}.
   Temperature range, wind/temperature ratio, month and day of the year are computed from your inputs.
 - **Cross-validated ROC-AUC (5-fold):** **{auc:.3f}**

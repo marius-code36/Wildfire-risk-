@@ -19,7 +19,7 @@ EXPECTED_RANGES = {  # percent, inclusive
     "Heatwave in August": (75, 85),
     "Mild spring day": (10, 15),
     "Rainy winter day": (0, 2),
-    "Dry, windy January": (15, 25),
+    "Dry, windy January": (10, 25),
 }
 
 
@@ -72,6 +72,16 @@ def test_feature_importance_night_temp_first():
     assert top == "MIN_TEMP"
 
 
+def test_no_absurd_winter_risk():
+    """Regression: February, 6 °C night / 18 °C day, very calm week used to give 48%."""
+    import datetime as dt
+    m = model()
+    for wind_7_days in (3.0, 4.0, 4.5, 5.0, 7.5):
+        prob, _, _ = predict_day(m, dt.date(2026, 2, 15), 64, 43, 8.0, 0.0, 0.0, wind_7_days)
+        print(f"Feb 15, 43/64 °F, 7-day wind {wind_7_days:>4} mph -> {prob:.0%}")
+        assert prob < 0.30
+
+
 def _risk_shown(at) -> int:
     for md in at.markdown:
         found = re.search(r"Fire risk:</span>\s*(\d+)%", md.value)
@@ -114,5 +124,6 @@ if __name__ == "__main__":
     test_examples_in_expected_ranges()
     test_cross_validated_auc()
     test_feature_importance_night_temp_first()
+    test_no_absurd_winter_risk()
     test_app_buttons()
     print("\nALL TESTS PASSED")

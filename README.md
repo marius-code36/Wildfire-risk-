@@ -59,9 +59,12 @@ python -m pytest -s tests
 YEAR, SEASON and DATE are deliberately **not** used, so the model cannot learn trends tied to a
 particular year.
 
-**Model**: `RandomForestClassifier(n_estimators=300, max_depth=12, random_state=42)`, trained on
+**Model**: `RandomForestClassifier(n_estimators=300, max_depth=12, min_samples_leaf=20, random_state=42)`, trained on
 all 14,598 days. Quality is measured with 5-fold stratified cross-validation (ROC-AUC ≈ 0.84,
 the exact value is shown in the app). The night temperature (MIN_TEMP) is the most important feature.
+Each leaf must contain at least 20 real days (`min_samples_leaf=20`): without it, rare
+combinations that never occurred in the data (e.g. a very calm week in February) got absurd
+risks of almost 50%.
 
 **Alert threshold: 30%.** In our tests this threshold catches 83% of fire days. It is set low on
 purpose: a missed fire costs far more than a false alarm.

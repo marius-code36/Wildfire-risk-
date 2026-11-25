@@ -48,6 +48,10 @@ FEATURE_LABELS = {
 
 N_TREES = 300
 MAX_DEPTH = 12
+# Each leaf must hold at least 20 real days. Without this, rare combinations (e.g. a very
+# calm week in February, which never happened in 40 years) end up in leaves built on a
+# handful of days and get absurd risks (48% instead of ~20%). CV AUC also improves slightly.
+MIN_SAMPLES_LEAF = 20
 
 
 def _to_bool(series: pd.Series) -> pd.Series:
@@ -68,7 +72,11 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 def make_model() -> RandomForestClassifier:
     return RandomForestClassifier(
-        n_estimators=N_TREES, max_depth=MAX_DEPTH, random_state=42, n_jobs=-1
+        n_estimators=N_TREES,
+        max_depth=MAX_DEPTH,
+        min_samples_leaf=MIN_SAMPLES_LEAF,
+        random_state=42,
+        n_jobs=-1,
     )
 
 
