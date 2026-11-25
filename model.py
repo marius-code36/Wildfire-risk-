@@ -163,11 +163,11 @@ EXAMPLES = {
     ),
     "Mild spring day": dict(
         date=dt.date(2026, 4, 10), max_temp=70, min_temp=50, wind=9.0,
-        rain=0.00, rain_7_days=0.30, wind_7_days=9.0,
+        rain=0.00, rain_7_days=8 / 25.4, wind_7_days=9.0,  # 8 mm this week
     ),
     "Rainy winter day": dict(
         date=dt.date(2026, 1, 20), max_temp=58, min_temp=45, wind=10.0,
-        rain=1.20, rain_7_days=3.00, wind_7_days=9.0,
+        rain=30 / 25.4, rain_7_days=75 / 25.4, wind_7_days=9.0,  # 30 mm today, 75 mm this week
     ),
     "Dry, windy January": dict(
         date=dt.date(2026, 1, 7), max_temp=70, min_temp=50, wind=14.0,

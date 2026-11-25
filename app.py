@@ -56,11 +56,25 @@ def get_model_report():
 
 
 # --------------------------------------------------------------------------- state
+# Rain is entered in millimetres on a stepped scale: fine steps for the small amounts that
+# are most common, wider steps for heavy rain. The model itself works in inches.
+MM_PER_INCH = 25.4
+RAIN_TODAY_MM = [0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60, 75]
+RAIN_WEEK_MM = [0, 1, 2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50, 60, 75, 100, 125, 150, 200]
+RAIN_STEPS = {"rain": RAIN_TODAY_MM, "rain_7_days": RAIN_WEEK_MM}
+
+
+def _nearest(options, value):
+    return min(options, key=lambda o: abs(o - value))
+
+
 def _coerce(name, value):
     if name in ("max_temp", "min_temp"):
         return int(value)
     if name == "date":
         return value
+    if name in RAIN_STEPS:  # inches -> nearest millimetre step
+        return _nearest(RAIN_STEPS[name], float(value) * MM_PER_INCH)
     return float(value)
 
 
@@ -144,10 +158,6 @@ def mph_to_kmh(mph: float) -> float:
     return mph * 1.609344
 
 
-def in_to_mm(inches: float) -> float:
-    return inches * 25.4
-
-
 def blend(c1: str, c2: str, t: float) -> str:
     t = max(0.0, min(1.0, float(t)))
     a = [int(c1[i : i + 2], 16) for i in (1, 3, 5)]
@@ -209,17 +219,22 @@ with left:
         st.caption("Note: the night minimum is above the day maximum - please check the values.")
     st.slider("Average wind today (mph)", 0.0, 20.0, step=0.1, key="wind", format="%.1f")
     st.caption(f"= {mph_to_kmh(st.session_state.wind):.1f} km/h")
-    st.slider("Rain today (in)", 0.00, 3.00, step=0.01, key="rain", format="%.2f")
-    st.caption(f"= {in_to_mm(st.session_state.rain):.1f} mm")
-    st.slider("Total rain over the last 7 days (in)", 0.00, 8.00, step=0.01, key="rain_7_days", format="%.2f")
-    st.caption(f"= {in_to_mm(st.session_state.rain_7_days):.1f} mm")
+    st.select_slider("Rain today (mm)", options=RAIN_TODAY_MM, key="rain", format_func=lambda v: f"{v} mm")
+    st.caption(f"= {st.session_state.rain / MM_PER_INCH:.2f} in")
+    st.select_slider(
+        "Total rain over the last 7 days (mm)", options=RAIN_WEEK_MM, key="rain_7_days",
+        format_func=lambda v: f"{v} mm",
+    )
+    st.caption(f"= {st.session_state.rain_7_days / MM_PER_INCH:.2f} in")
     st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
     st.caption(f"= {mph_to_kmh(st.session_state.wind_7_days):.1f} km/h")
 
 ss = st.session_state
+rain_in = ss.rain / MM_PER_INCH
+rain_7_days_in = ss.rain_7_days / MM_PER_INCH
 day = ss.date if isinstance(ss.date, dt.date) else DEFAULTS["date"]
 prob, trees_fire, tree_probs = predict_day(
-    model, day, ss.max_temp, ss.min_temp, ss.wind, ss.rain, ss.rain_7_days, ss.wind_7_days
+    model, day, ss.max_temp, ss.min_temp, ss.wind, rain_in, rain_7_days_in, ss.wind_7_days
 )
 risk_pct = round(prob * 100)
 level = danger_level(prob * 100)
@@ -242,7 +257,7 @@ with right:
   <div class="small-note">Alert threshold 30%: in our tests it catches 83% of fire days,
   because a missed fire costs far more than a false alarm.</div>
   {gauge_html(prob * 100)}
-  <div class="signals"><b>Main signals:</b> {html.escape(", ".join(main_signals(day, ss.min_temp, ss.rain, ss.rain_7_days)))}.</div>
+  <div class="signals"><b>Main signals:</b> {html.escape(", ".join(main_signals(day, ss.min_temp, rain_in, rain_7_days_in)))}.</div>
 </div>
 """,
         unsafe_allow_html=True,

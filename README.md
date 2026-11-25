@@ -47,13 +47,13 @@ python -m pytest -s tests
 
 | Feature | Meaning |
 |---|---|
-| PRECIPITATION | rain today (in) |
+| PRECIPITATION | rain today (entered in mm on a stepped scale, converted to inches) |
 | MAX_TEMP / MIN_TEMP | day maximum / night minimum (°F) |
 | AVG_WIND_SPEED | average wind today (mph) |
 | TEMP_RANGE | MAX_TEMP − MIN_TEMP (computed) |
 | WIND_TEMP_RATIO | AVG_WIND_SPEED / MAX_TEMP (computed) |
 | MONTH, DAY_OF_YEAR | from the date (computed) |
-| LAGGED_PRECIPITATION | total rain over the last 7 days, today included (in) |
+| LAGGED_PRECIPITATION | total rain over the last 7 days, today included (entered in mm, converted to inches) |
 | LAGGED_AVG_WIND_SPEED | average wind over the last 7 days, today included (mph) |
 
 YEAR, SEASON and DATE are deliberately **not** used, so the model cannot learn trends tied to a

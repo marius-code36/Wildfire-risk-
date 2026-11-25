@@ -98,11 +98,15 @@ def test_app_buttons():
     # moving a slider updates the result instantly
     at.button(key="ex_Heatwave in August").click().run()
     before = _risk_shown(at)
-    at.slider(key="rain_7_days").set_value(3.0).run()
+    at.select_slider(key="rain_7_days").set_value(75).run()
     assert not at.exception
     after = _risk_shown(at)
-    print(f"Heatwave + 3 in of rain this week: {before}% -> {after}%")
+    print(f"Heatwave + 75 mm of rain this week: {before}% -> {after}%")
     assert after < before
+    # rain is entered in mm on fixed steps; 4 mm must be selectable
+    at.select_slider(key="rain").set_value(4).run()
+    assert not at.exception
+    assert any(c.value == "= 0.16 in" for c in at.caption)
 
 
 if __name__ == "__main__":
