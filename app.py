@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import html
+import time
 
 import altair as alt
 import streamlit as st
@@ -35,6 +36,8 @@ NAVY_2 = "#14283b"
 ORANGE = "#f05a28"
 SAND = "#f6f3ed"
 CALM = "#7898ad"
+
+ANIMATION_SECONDS = 2.6  # length of the "forest is voting" animation
 
 LEVEL_COLORS = {"Low": "#7898ad", "Moderate": "#e8b04a", "High": "#f0802f", "Extreme": "#d63c12"}
 
@@ -79,15 +82,35 @@ def _coerce(name, value):
     return float(value)
 
 
+INPUT_KEYS = list(DEFAULTS)
+ss = st.session_state
+
+# Two screens: "form" (enter the weather) -> short forest animation -> "result".
+# Widgets that are not displayed lose their value in Streamlit, so the entered weather is
+# also kept in ss.saved and copied back into the widgets when returning to the form.
+if "saved" not in ss:
+    ss.saved = {k: _coerce(k, v) for k, v in DEFAULTS.items()}
+    ss.page = "form"
+    ss.animate = False
+
+
 def apply_example(name: str) -> None:
     """on_click callback: runs BEFORE the widgets are rendered on the next rerun."""
     for key, value in EXAMPLES[name].items():
-        st.session_state[key] = _coerce(key, value)
+        ss[key] = _coerce(key, value)
+        ss.saved[key] = ss[key]
 
 
-for _key, _value in DEFAULTS.items():
-    if _key not in st.session_state:
-        st.session_state[_key] = _coerce(_key, _value)
+def go_predict() -> None:
+    ss.saved = {k: ss[k] for k in INPUT_KEYS}
+    ss.page = "result"
+    ss.animate = True
+
+
+def go_back() -> None:
+    for k in INPUT_KEYS:
+        ss[k] = ss.saved[k]
+    ss.page = "form"
 
 
 # --------------------------------------------------------------------------- style
@@ -138,7 +161,23 @@ st.markdown(
   [data-testid="stButton"] button p {{ font-weight: 700 !important; font-size: 1.05rem !important; }}
   [data-testid="stButton"] button {{ min-height: 3rem;
                                          border-radius: 12px; }}
+  [data-testid="stBaseButton-primary"] {{ min-height: 4.2rem !important; border-radius: 16px !important;
+                                          box-shadow: 0 4px 16px rgba(240,90,40,.35); }}
+  [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p {{ font-size: 1.5rem !important; font-weight: 800 !important; }}
+  .section-title {{ font-size: 1.6rem; font-weight: 800; color: {NAVY}; margin: .2rem 0 .8rem 0; }}
+  .loading {{ text-align: center; padding: 2.4rem 1.5rem; }}
+  .loading-title {{ font-size: 2.2rem; font-weight: 800; color: {NAVY}; }}
+  .loading-sub {{ font-size: 1.2rem; color: #50657a; margin: .4rem 0 1.4rem 0; }}
+  .loading .forest {{ margin: 0 auto; max-width: 560px; }}
+  .loading-bar {{ height: 10px; border-radius: 5px; background: #e6e1d8; overflow: hidden;
+                  max-width: 560px; margin: 1.4rem auto 0 auto; }}
+  .loading-bar div {{ height: 100%; background: {ORANGE}; }}
+  .tree-empty {{ background: #efebe4; }}
+  .weather-recap {{ font-size: 1.15rem; color: {NAVY_2}; background: #ffffff; border-radius: 14px;
+                    padding: .9rem 1.2rem; box-shadow: 0 2px 10px rgba(11,31,51,.06); }}
+  .weather-recap b {{ color: {NAVY}; }}
   @media (max-width: 640px) {{
+    .loading-title {{ font-size: 1.6rem; }}
     .app-title {{ font-size: 2.1rem; }}
     .risk-big {{ font-size: 4.2rem; }}
     .risk-word {{ font-size: 1.6rem; display: block; }}
@@ -190,6 +229,87 @@ def forest_html(tree_probs) -> str:
     return f'<div class="forest">{cells}</div>'
 
 
+def forest_loading_html(tree_probs, shown: int) -> str:
+    cells = "".join(
+        f'<div style="background:{blend("#d5dde3", ORANGE, p)};"></div>' if i < shown
+        else '<div class="tree-empty"></div>'
+        for i, p in enumerate(tree_probs)
+    )
+    pct = 100 * shown / len(tree_probs)
+    return f"""
+<div class="card loading">
+  <div class="loading-title">🌲 The forest is voting...</div>
+  <div class="loading-sub">{shown} / {len(tree_probs)} trees have given their answer</div>
+  <div class="forest">{cells}</div>
+  <div class="loading-bar"><div style="width:{pct:.0f}%;"></div></div>
+</div>"""
+
+
+def weather_recap_html(w: dict) -> str:
+    return (
+        '<div class="weather-recap">'
+        f"📅 <b>{w['date']:%d %B %Y}</b> &nbsp;·&nbsp; "
+        f"🌡️ <b>{w['max_temp']}°F</b> day / <b>{w['min_temp']}°F</b> night "
+        f"({f_to_c(w['max_temp']):.0f} °C / {f_to_c(w['min_temp']):.0f} °C) &nbsp;·&nbsp; "
+        f"💨 <b>{w['wind']:.1f} mph</b> today, {w['wind_7_days']:.1f} mph over 7 days &nbsp;·&nbsp; "
+        f"🌧️ <b>{w['rain']} mm</b> today, {w['rain_7_days']} mm over 7 days"
+        "</div>"
+    )
+
+
+# --------------------------------------------------------------------------- how it works + about
+def render_info() -> None:
+    st.write("")
+    st.markdown("## How it works")
+    steps = [
+        (
+            "Learn from 40 years",
+            f"{n_rows:,} labelled days of NOAA weather and CAL FIRE fire starts, 1984 to Dec 2023. "
+            "No year variable, so no data leakage.",
+        ),
+        (
+            f"{N_TREES} trees vote",
+            "Each tree asks yes/no questions about the weather (warm night? rain this week?) "
+            "and gives a probability; the forest averages them.",
+        ),
+        ("Alert at 30%", "From 30% risk we alert."),
+    ]
+    for i, (col, (title, text)) in enumerate(zip(st.columns(3, gap="large"), steps), start=1):
+        col.markdown(
+            f'<div class="card"><span class="step-num">{i}</span><span class="step-title">{title}</span>'
+            f'<div class="step-text">{text}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    # --------------------------------------------------------------------------- about the model
+    with st.expander("About the model"):
+        auc, importances = get_model_report()
+        st.markdown(
+            f"- **Model:** Random Forest, {N_TREES} trees, max depth {MAX_DEPTH}, "
+            f"at least {MIN_SAMPLES_LEAF} days per leaf, trained on {n_rows:,} days.\n"
+            f"- **Features used:** {', '.join(FEATURE_LABELS[f] for f in FEATURES)}. "
+            "Temperature range, wind/temperature ratio, month and day of the year "
+            "are computed from your inputs.\n"
+            f"- **Cross-validated ROC-AUC (5-fold):** **{auc:.3f}**"
+        )
+        chart = (
+            alt.Chart(importances)
+            .mark_bar(color=ORANGE, cornerRadiusEnd=4)
+            .encode(
+                x=alt.X("importance:Q", title="Importance", axis=alt.Axis(format="%", tickCount=6)),
+                y=alt.Y("label:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260, labelFontSize=14)),
+                tooltip=[alt.Tooltip("label:N", title="Feature"), alt.Tooltip("importance:Q", format=".1%")],
+            )
+            .properties(height=380, title="What the forest looks at most")
+            .configure_title(fontSize=16, color=NAVY)
+        )
+        st.altair_chart(chart, use_container_width=True)
+        st.markdown(
+            "**Limit:** Winter fires driven by Santa Ana winds are often missed. "
+            "The model advises, humans decide."
+        )
+
+
 # --------------------------------------------------------------------------- header
 st.markdown('<div class="app-title">🔥 Will a wildfire start today?</div>', unsafe_allow_html=True)
 st.markdown(
@@ -198,59 +318,89 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown("**Try an example:**")
-example_cols = st.columns(len(EXAMPLES))
-for col, name in zip(example_cols, EXAMPLES):
-    col.button(name, on_click=apply_example, args=(name,), use_container_width=True, key=f"ex_{name}")
-
 model, n_rows = get_model()
 
-st.write("")
-left, right = st.columns([1, 1.25], gap="large")
+# =========================================================================== screens
+def render_form_screen() -> None:
+    for k in INPUT_KEYS:  # restore values after coming back from the result screen
+        if k not in ss:
+            ss[k] = ss.saved[k]
 
-# --------------------------------------------------------------------------- inputs
-with left:
-    st.markdown("### Weather forecast")
-    st.date_input("Date", key="date", format="YYYY-MM-DD")
-    st.slider("Max temperature of the day (°F)", 50, 106, step=1, key="max_temp")
-    st.caption(f"= {f_to_c(st.session_state.max_temp):.1f} °C")
-    st.slider("Min temperature of the night (°F)", 30, 80, step=1, key="min_temp")
-    st.caption(f"= {f_to_c(st.session_state.min_temp):.1f} °C")
-    if st.session_state.min_temp > st.session_state.max_temp:
-        st.caption("Note: the night minimum is above the day maximum - please check the values.")
-    st.slider("Average wind today (mph)", 0.0, 20.0, step=0.1, key="wind", format="%.1f")
-    st.caption(f"= {mph_to_kmh(st.session_state.wind):.1f} km/h")
-    st.select_slider("Rain today (mm)", options=RAIN_TODAY_MM, key="rain", format_func=lambda v: f"{v} mm")
-    st.caption(f"= {st.session_state.rain / MM_PER_INCH:.2f} in")
-    st.select_slider(
-        "Total rain over the last 7 days (mm)", options=RAIN_WEEK_MM, key="rain_7_days",
-        format_func=lambda v: f"{v} mm",
+    st.markdown("**Try an example:**")
+    example_cols = st.columns(len(EXAMPLES))
+    for col, name in zip(example_cols, EXAMPLES):
+        col.button(name, on_click=apply_example, args=(name,), use_container_width=True, key=f"ex_{name}")
+
+    st.write("")
+    st.markdown('<div class="section-title">Weather forecast</div>', unsafe_allow_html=True)
+    left, right = st.columns(2, gap="large")
+    with left:
+        st.date_input("Date", key="date", format="YYYY-MM-DD")
+        st.slider("Max temperature of the day (°F)", 50, 106, step=1, key="max_temp")
+        st.caption(f"= {f_to_c(ss.max_temp):.1f} °C")
+        st.slider("Min temperature of the night (°F)", 30, 80, step=1, key="min_temp")
+        st.caption(f"= {f_to_c(ss.min_temp):.1f} °C")
+        if ss.min_temp > ss.max_temp:
+            st.caption("Note: the night minimum is above the day maximum - please check the values.")
+    with right:
+        st.slider("Average wind today (mph)", 0.0, 20.0, step=0.1, key="wind", format="%.1f")
+        st.caption(f"= {mph_to_kmh(ss.wind):.1f} km/h")
+        st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
+        st.caption(f"= {mph_to_kmh(ss.wind_7_days):.1f} km/h")
+        st.select_slider("Rain today (mm)", options=RAIN_TODAY_MM, key="rain", format_func=lambda v: f"{v} mm")
+        st.caption(f"= {ss.rain / MM_PER_INCH:.2f} in")
+        st.select_slider(
+            "Total rain over the last 7 days (mm)", options=RAIN_WEEK_MM, key="rain_7_days",
+            format_func=lambda v: f"{v} mm",
+        )
+        st.caption(f"= {ss.rain_7_days / MM_PER_INCH:.2f} in")
+
+    st.write("")
+    st.button("🔥 Predict the fire risk", type="primary", on_click=go_predict,
+              use_container_width=True, key="predict")
+    render_info()
+
+
+def render_result(slot) -> None:
+    w = ss.saved
+    rain_in = w["rain"] / MM_PER_INCH
+    rain_7_days_in = w["rain_7_days"] / MM_PER_INCH
+    day = w["date"] if isinstance(w["date"], dt.date) else DEFAULTS["date"]
+    prob, trees_fire, tree_probs = predict_day(
+        model, day, w["max_temp"], w["min_temp"], w["wind"], rain_in, rain_7_days_in, w["wind_7_days"]
     )
-    st.caption(f"= {st.session_state.rain_7_days / MM_PER_INCH:.2f} in")
-    st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
-    st.caption(f"= {mph_to_kmh(st.session_state.wind_7_days):.1f} km/h")
 
-ss = st.session_state
-rain_in = ss.rain / MM_PER_INCH
-rain_7_days_in = ss.rain_7_days / MM_PER_INCH
-day = ss.date if isinstance(ss.date, dt.date) else DEFAULTS["date"]
-prob, trees_fire, tree_probs = predict_day(
-    model, day, ss.max_temp, ss.min_temp, ss.wind, rain_in, rain_7_days_in, ss.wind_7_days
-)
-risk_pct = round(prob * 100)
-level = danger_level(prob * 100)
-alert = prob * 100 >= ALERT_THRESHOLD
+    if ss.animate:  # short "the forest is voting" animation, only right after Predict
+        ss.animate = False
+        for shown in range(0, N_TREES + 1, 20):
+            slot.markdown(forest_loading_html(tree_probs, shown), unsafe_allow_html=True)
+            time.sleep(ANIMATION_SECONDS / (N_TREES / 20))
+        time.sleep(0.4)
 
-# --------------------------------------------------------------------------- output
-with right:
-    risk_color = ORANGE if alert else CALM
-    alert_html = (
-        '<div class="alert alert-on">🚒 FIRE ALERT - prepare crews</div>'
-        if alert
-        else '<div class="alert alert-off">✓ No alert</div>'
-    )
-    st.markdown(
-        f"""
+    with slot.container():
+        render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_days_in)
+
+
+def render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_days_in) -> None:
+    risk_pct = round(prob * 100)
+    level = danger_level(prob * 100)
+    alert = prob * 100 >= ALERT_THRESHOLD
+    top_left, top_right = st.columns([1, 4], vertical_alignment="center")
+    top_left.button("← Change the weather", on_click=go_back, use_container_width=True, key="back")
+    top_right.markdown(weather_recap_html(w), unsafe_allow_html=True)
+    st.write("")
+
+    res_left, res_right = st.columns([1.15, 1], gap="large")
+    with res_left:
+        risk_color = ORANGE if alert else CALM
+        alert_html = (
+            '<div class="alert alert-on">🚒 FIRE ALERT - prepare crews</div>'
+            if alert
+            else '<div class="alert alert-off">✓ No alert</div>'
+        )
+        signals = html.escape(", ".join(main_signals(day, w["min_temp"], rain_in, rain_7_days_in)))
+        st.markdown(
+            f"""
 <div class="card">
   <div class="risk-big" style="color:{risk_color};"><span class="risk-word">Fire risk:</span> {risk_pct}%</div>
   <span class="level-pill" style="background:{LEVEL_COLORS[level]};">Danger level: {level}</span>
@@ -258,14 +408,14 @@ with right:
   <div class="small-note">Alert threshold 30%: in our tests it catches 83% of fire days,
   because a missed fire costs far more than a false alarm.</div>
   {gauge_html(prob * 100)}
-  <div class="signals"><b>Main signals:</b> {html.escape(", ".join(main_signals(day, ss.min_temp, rain_in, rain_7_days_in)))}.</div>
+  <div class="signals"><b>Main signals:</b> {signals}.</div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f"""
+            unsafe_allow_html=True,
+        )
+    with res_right:
+        st.markdown(
+            f"""
 <div class="card">
   <div class="risk-label">The forest votes</div>
   <div class="votes">{trees_fire} of {N_TREES} trees see a fire</div>
@@ -274,59 +424,19 @@ with right:
   The risk is the average of their answers.</div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
-
-# --------------------------------------------------------------------------- how it works
-st.write("")
-st.markdown("## How it works")
-steps = [
-    (
-        "Learn from 40 years",
-        f"{n_rows:,} labelled days of NOAA weather and CAL FIRE fire starts, 1984 to Dec 2023. "
-        "No year variable, so no data leakage.",
-    ),
-    (
-        f"{N_TREES} trees vote",
-        "Each tree asks yes/no questions about the weather (warm night? rain this week?) "
-        "and gives a probability; the forest averages them.",
-    ),
-    ("Alert at 30%", "From 30% risk we alert."),
-]
-for i, (col, (title, text)) in enumerate(zip(st.columns(3, gap="large"), steps), start=1):
-    col.markdown(
-        f'<div class="card"><span class="step-num">{i}</span><span class="step-title">{title}</span>'
-        f'<div class="step-text">{text}</div></div>',
-        unsafe_allow_html=True,
-    )
-
-# --------------------------------------------------------------------------- about the model
-with st.expander("About the model"):
-    auc, importances = get_model_report()
-    st.markdown(
-        f"""
-- **Model:** Random Forest, {N_TREES} trees, max depth {MAX_DEPTH}, at least {MIN_SAMPLES_LEAF} days per leaf, trained on {n_rows:,} days.
-- **Features used:** {", ".join(FEATURE_LABELS[f] for f in FEATURES)}.
-  Temperature range, wind/temperature ratio, month and day of the year are computed from your inputs.
-- **Cross-validated ROC-AUC (5-fold):** **{auc:.3f}**
-"""
-    )
-    chart = (
-        alt.Chart(importances)
-        .mark_bar(color=ORANGE, cornerRadiusEnd=4)
-        .encode(
-            x=alt.X("importance:Q", title="Importance", axis=alt.Axis(format="%", tickCount=6)),
-            y=alt.Y("label:N", sort="-x", title=None, axis=alt.Axis(labelLimit=260, labelFontSize=14)),
-            tooltip=[alt.Tooltip("label:N", title="Feature"), alt.Tooltip("importance:Q", format=".1%")],
+            unsafe_allow_html=True,
         )
-        .properties(height=380, title="What the forest looks at most")
-        .configure_title(fontSize=16, color=NAVY)
-    )
-    st.altair_chart(chart, use_container_width=True)
-    st.markdown(
-        "**Limit:** Winter fires driven by Santa Ana winds are often missed. "
-        "The model advises, humans decide."
-    )
+    render_info()
+
+
+# Each screen lives in one single slot: the animation and the result fully replace the form
+# (otherwise Streamlit keeps showing the old screen, greyed out, while the next one loads).
+slot = st.empty()
+if ss.page == "form":
+    with slot.container():
+        render_form_screen()
+else:
+    render_result(slot)
 
 st.markdown(
     '<div class="footer">Data: Yavas et al. (2025), California Weather and Fire Prediction Dataset '

@@ -90,30 +90,41 @@ def _risk_shown(at) -> int:
     raise AssertionError("risk not displayed")
 
 
-def test_app_buttons():
+def test_app_flow():
+    """Form -> Predict (forest animation) -> result -> Change the weather, for every example."""
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=300).run()
     assert not at.exception, at.exception
-    print(f"\nApp default risk shown: {_risk_shown(at)}%")
-    for i, name in enumerate(EXAMPLES):
+    assert at.button(key="predict")  # screen 1 shows the form
+    for name in EXAMPLES:
         at.button(key=f"ex_{name}").click().run()
+        assert not at.exception, at.exception
+        at.button(key="predict").click().run()
         assert not at.exception, at.exception
         shown = _risk_shown(at)
         lo, hi = EXPECTED_RANGES[name]
         alert = any("FIRE ALERT" in md.value for md in at.markdown)
-        print(f"Clicked '{name}': risk shown = {shown}%  alert = {alert}")
+        print(f"Clicked '{name}' then Predict: risk shown = {shown}%  alert = {alert}")
         assert lo <= shown <= hi
         assert alert == (shown >= 30)
-    # moving a slider updates the result instantly
+        at.button(key="back").click().run()  # back to the form, values kept
+        assert not at.exception, at.exception
+        assert at.slider(key="max_temp").value == EXAMPLES[name]["max_temp"]
+
+    # changing a value on the form changes the prediction
     at.button(key="ex_Heatwave in August").click().run()
+    at.button(key="predict").click().run()
     before = _risk_shown(at)
+    at.button(key="back").click().run()
     at.select_slider(key="rain_7_days").set_value(75).run()
+    at.button(key="predict").click().run()
     assert not at.exception
     after = _risk_shown(at)
     print(f"Heatwave + 75 mm of rain this week: {before}% -> {after}%")
     assert after < before
     # rain is entered in mm on fixed steps; 4 mm must be selectable
+    at.button(key="back").click().run()
     at.select_slider(key="rain").set_value(4).run()
     assert not at.exception
     assert any(c.value == "= 0.16 in" for c in at.caption)
@@ -125,5 +136,5 @@ if __name__ == "__main__":
     test_cross_validated_auc()
     test_feature_importance_night_temp_first()
     test_no_absurd_winter_risk()
-    test_app_buttons()
+    test_app_flow()
     print("\nALL TESTS PASSED")

@@ -18,7 +18,9 @@ Built for the course *AI for Business & Society* at SKEMA Business School.
   Heatwave in August, Mild spring day, Rainy winter day, Dry windy January.
 - **How it works** and **About the model** (cross-validated ROC-AUC, feature importances, limits).
 
-The result updates instantly when any input changes — there is no submit button.
+**Flow:** (1) enter the weather or click an example, then **Predict the fire risk**;
+(2) a short animation shows the 300 trees voting one row at a time; (3) the result screen shows
+the risk, the alert and the forest's vote, with **Change the weather** to go back (values are kept).
 
 ## Run it locally
 
