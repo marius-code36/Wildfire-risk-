@@ -332,9 +332,9 @@ def render_form_screen() -> None:
         col.button(name, on_click=apply_example, args=(name,), use_container_width=True, key=f"ex_{name}")
 
     st.write("")
-    st.markdown('<div class="section-title">Weather forecast</div>', unsafe_allow_html=True)
-    left, right = st.columns(2, gap="large")
-    with left:
+    _, center, _ = st.columns([1, 2.2, 1])  # one centred column, comfortable to read
+    with center:
+        st.markdown('<div class="section-title">Weather forecast</div>', unsafe_allow_html=True)
         st.date_input("Date", key="date", format="YYYY-MM-DD")
         st.slider("Max temperature of the day (°F)", 50, 106, step=1, key="max_temp")
         st.caption(f"= {f_to_c(ss.max_temp):.1f} °C")
@@ -342,11 +342,8 @@ def render_form_screen() -> None:
         st.caption(f"= {f_to_c(ss.min_temp):.1f} °C")
         if ss.min_temp > ss.max_temp:
             st.caption("Note: the night minimum is above the day maximum - please check the values.")
-    with right:
         st.slider("Average wind today (mph)", 0.0, 20.0, step=0.1, key="wind", format="%.1f")
         st.caption(f"= {mph_to_kmh(ss.wind):.1f} km/h")
-        st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
-        st.caption(f"= {mph_to_kmh(ss.wind_7_days):.1f} km/h")
         st.select_slider("Rain today (mm)", options=RAIN_TODAY_MM, key="rain", format_func=lambda v: f"{v} mm")
         st.caption(f"= {ss.rain / MM_PER_INCH:.2f} in")
         st.select_slider(
@@ -354,10 +351,12 @@ def render_form_screen() -> None:
             format_func=lambda v: f"{v} mm",
         )
         st.caption(f"= {ss.rain_7_days / MM_PER_INCH:.2f} in")
+        st.slider("Average wind over the last 7 days (mph)", 3.0, 14.0, step=0.1, key="wind_7_days", format="%.1f")
+        st.caption(f"= {mph_to_kmh(ss.wind_7_days):.1f} km/h")
 
-    st.write("")
-    st.button("🔥 Predict the fire risk", type="primary", on_click=go_predict,
-              use_container_width=True, key="predict")
+        st.write("")
+        st.button("🔥 Predict the fire risk", type="primary", on_click=go_predict,
+                  use_container_width=True, key="predict")
     render_info()
 
 
