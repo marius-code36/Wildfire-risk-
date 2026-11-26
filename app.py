@@ -148,10 +148,20 @@ st.markdown(
   .forest div {{ aspect-ratio: 1 / 1; border-radius: 2px; }}
   .votes {{ font-size: 1.5rem; font-weight: 700; color: {NAVY}; margin-bottom: .6rem; }}
   .signals {{ font-size: 1.25rem; color: {NAVY_2}; margin-top: .4rem; }}
-  .step-num {{ display: inline-block; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: {ORANGE};
+  .steps {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.1rem; align-items: stretch;
+             margin-bottom: 1.6rem; }}
+  .steps .card {{ margin-bottom: 0; }}
+  .step-head {{ display: flex; align-items: center; }}
+  @media (max-width: 1100px) {{ .steps {{ grid-template-columns: repeat(2, 1fr); }} }}
+  @media (max-width: 640px) {{ .steps {{ grid-template-columns: 1fr; }} }}
+  .step-num {{ flex: 0 0 auto; display: inline-block; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: {ORANGE};
                color: #fff; text-align: center; line-height: 2.2rem; font-weight: 800; margin-right: .5rem; }}
-  .step-title {{ font-size: 1.3rem; font-weight: 800; color: {NAVY}; }}
+  .step-title {{ font-size: 1.22rem; line-height: 1.2; font-weight: 800; color: {NAVY}; }}
   .step-text {{ font-size: 1.05rem; color: {NAVY_2}; margin-top: .5rem; }}
+  .lvls {{ display: flex; flex-direction: column; gap: .55rem; }}
+  .lvl {{ display: flex; gap: .55rem; align-items: flex-start; font-size: .98rem; line-height: 1.3; }}
+  .lvl-dot {{ flex: 0 0 auto; width: .95rem; height: .95rem; border-radius: 50%; margin-top: .2rem; }}
+  .lvl-range {{ color: #50657a; font-size: .9rem; }}
   .footer {{ color: #50657a; font-size: .9rem; text-align: center; margin-top: 2.5rem; }}
   [data-testid="stWidgetLabel"] p {{ font-size: 1.12rem !important; font-weight: 600 !important;
                                      color: {NAVY_2} !important; }}
@@ -258,6 +268,23 @@ def weather_recap_html(w: dict) -> str:
 
 
 # --------------------------------------------------------------------------- how it works + about
+RESPONSE_LEVELS = [
+    ("Low", "below 15%", "normal operations"),
+    ("Moderate", "15-30%", "closer monitoring, no alert"),
+    ("High", "30-60%", "alert: crews ready to intervene"),
+    ("Extreme", "60% and more", "alert: reinforcements mobilised"),
+]
+
+
+def levels_html() -> str:
+    rows = "".join(
+        f'<div class="lvl"><span class="lvl-dot" style="background:{LEVEL_COLORS[name]};"></span>'
+        f"<div><b>{name}</b> <span class=\"lvl-range\">{rng}</span><br>{what}</div></div>"
+        for name, rng, what in RESPONSE_LEVELS
+    )
+    return f'<div class="lvls">{rows}</div>'
+
+
 def render_info() -> None:
     st.write("")
     st.markdown("## How it works")
@@ -273,13 +300,14 @@ def render_info() -> None:
             "and gives a probability; the forest averages them.",
         ),
         ("Alert at 30%", "From 30% risk we alert."),
+        ("Graduated response", levels_html()),
     ]
-    for i, (col, (title, text)) in enumerate(zip(st.columns(3, gap="large"), steps), start=1):
-        col.markdown(
-            f'<div class="card"><span class="step-num">{i}</span><span class="step-title">{title}</span>'
-            f'<div class="step-text">{text}</div></div>',
-            unsafe_allow_html=True,
-        )
+    cards = "".join(
+        f'<div class="card step-card"><div class="step-head"><span class="step-num">{i}</span>'
+        f'<span class="step-title">{title}</span></div><div class="step-text">{text}</div></div>'
+        for i, (title, text) in enumerate(steps, start=1)
+    )
+    st.markdown(f'<div class="steps">{cards}</div>', unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------- about the model
     with st.expander("About the model"):
