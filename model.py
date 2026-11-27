@@ -183,3 +183,30 @@ EXAMPLES = {
     ),
 }
 DEFAULTS = EXAMPLES["Heatwave in August"]
+
+
+# --------------------------------------------------------------------------- economics
+# Cost of one alert (= cost of a false alarm): a strike team of 5 Type III engines on standby
+# for 24 h, Cal OES 2025 rates: engine $156.74/h + 4 firefighters at $44.97/h overtime.
+ENGINE_RATE = 156.74
+FIREFIGHTER_RATE = 44.97
+STANDBY_COST = 5 * 24 * (ENGINE_RATE + 4 * FIREFIGHTER_RATE)  # = $40,394.40
+# Default cost of a fire that starts without crews being ready: average firefighting cost per
+# fire in California in 2018 (~$1B of suppression for ~8,500 fires). Conservative: no damages.
+DEFAULT_MISSED_FIRE_COST = 120_000
+
+
+def decision_economics(prob: float, missed_fire_cost: float = DEFAULT_MISSED_FIRE_COST,
+                       standby_cost: float = STANDBY_COST) -> dict:
+    """Money at stake for one day, if we alert vs if we do not.
+
+    Alerting costs `standby_cost` whatever happens. If a fire starts, the alert avoids the cost of
+    a fire nobody was ready for, so the saving is `missed_fire_cost - standby_cost`.
+    """
+    return {
+        "cost_if_no_fire": standby_cost,                        # false alarm
+        "saved_if_fire": missed_fire_cost - standby_cost,       # fire caught in time
+        "expected_value_of_alert": prob * missed_fire_cost - standby_cost,
+        "expected_loss_without_alert": prob * missed_fire_cost,
+        "break_even_risk": standby_cost / missed_fire_cost,     # alerting pays off above this risk
+    }

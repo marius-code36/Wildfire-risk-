@@ -82,6 +82,18 @@ def test_no_absurd_winter_risk():
         assert prob < 0.30
 
 
+def test_decision_economics():
+    from model import STANDBY_COST, decision_economics
+    assert round(STANDBY_COST) == 40_394  # 5 engines x 24 h x ($156.74 + 4 x $44.97)
+    e = decision_economics(0.80, 120_000)
+    print(f"\nAlert at 80%: false alarm costs ${e['cost_if_no_fire']:,.0f}, "
+          f"fire caught saves ${e['saved_if_fire']:,.0f}, expected value ${e['expected_value_of_alert']:,.0f}, "
+          f"break-even risk {e['break_even_risk']:.0%}")
+    assert round(e["saved_if_fire"]) == 79_606
+    assert round(e["expected_value_of_alert"]) == 55_606
+    assert 0.33 < e["break_even_risk"] < 0.34
+
+
 def _risk_shown(at) -> int:
     for md in at.markdown:
         found = re.search(r"Fire risk:</span>\s*(\d+)%", md.value)
@@ -123,6 +135,25 @@ def test_app_flow():
     after = _risk_shown(at)
     print(f"Heatwave + 75 mm of rain this week: {before}% -> {after}%")
     assert after < before
+    # cost card: alert day shows the false-alarm cost and the saving; the fire cost is adjustable
+    at.button(key="back").click().run()
+    at.button(key="ex_Heatwave in August").click().run()
+    at.button(key="predict").click().run()
+    card = next(md.value for md in at.markdown if "class=\"econ-tile" in md.value)
+    assert "−$40,394" in card and "+$79,606 saved" in card
+    at.number_input(key="missed_fire_cost").set_value(500_000).run()
+    assert not at.exception
+    card = next(md.value for md in at.markdown if "class=\"econ-tile" in md.value)
+    assert "+$459,606 saved" in card
+    assert "+$359,606" in card  # 80% x $500,000 - $40,394, matching the displayed 80%
+    print("Cost card (heatwave, fire cost $500k): saving shown = +$459,606")
+    at.button(key="back").click().run()
+    at.button(key="ex_Rainy winter day").click().run()
+    at.button(key="predict").click().run()
+    card = next(md.value for md in at.markdown if "class=\"econ-tile" in md.value)
+    assert "No alert" in card and "$0 spent" in card
+    assert at.number_input(key="missed_fire_cost").value == 500_000  # kept across screens
+
     # rain is entered in mm on fixed steps; 4 mm must be selectable
     at.button(key="back").click().run()
     at.select_slider(key="rain").set_value(4).run()
@@ -136,5 +167,6 @@ if __name__ == "__main__":
     test_cross_validated_auc()
     test_feature_importance_night_temp_first()
     test_no_absurd_winter_risk()
+    test_decision_economics()
     test_app_flow()
     print("\nALL TESTS PASSED")

@@ -10,9 +10,11 @@ import time
 
 import altair as alt
 import streamlit as st
+import streamlit.components.v1 as components
 
 from model import (
     ALERT_THRESHOLD,
+    DEFAULT_MISSED_FIRE_COST,
     DEFAULTS,
     EXAMPLES,
     FEATURE_LABELS,
@@ -20,8 +22,10 @@ from model import (
     MAX_DEPTH,
     MIN_SAMPLES_LEAF,
     N_TREES,
+    STANDBY_COST,
     cross_validated_auc,
     danger_level,
+    decision_economics,
     feature_importances,
     load_data,
     main_signals,
@@ -162,6 +166,18 @@ st.markdown(
   .lvl {{ display: flex; gap: .55rem; align-items: flex-start; font-size: .98rem; line-height: 1.3; }}
   .lvl-dot {{ flex: 0 0 auto; width: .95rem; height: .95rem; border-radius: 50%; margin-top: .2rem; }}
   .lvl-range {{ color: #50657a; font-size: .9rem; }}
+  .econ {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }}
+  .econ-tile {{ border-radius: 14px; padding: 1.1rem 1.2rem; }}
+  .econ-head {{ font-size: 1rem; font-weight: 700; opacity: .9; }}
+  .econ-value {{ font-size: 2.3rem; font-weight: 900; line-height: 1.15; margin: .3rem 0 .4rem 0; }}
+  .econ-text {{ font-size: .95rem; line-height: 1.35; opacity: .92; }}
+  .econ-cost {{ background: #ece6dc; color: {NAVY}; }}
+  .econ-save {{ background: {ORANGE}; color: #fff; }}
+  .econ-avg {{ background: {NAVY}; color: #fff; }}
+  @media (max-width: 900px) {{ .econ {{ grid-template-columns: 1fr; }} }}
+  [data-testid="stIFrame"], iframe[height="0"] {{ display: block; height: 0 !important; border: 0; }}
+  .element-container:has(iframe[height="0"]), [data-testid="stElementContainer"]:has(iframe[height="0"]) {{
+      margin: 0 !important; height: 0 !important; }}
   .footer {{ color: #50657a; font-size: .9rem; text-align: center; margin-top: 2.5rem; }}
   [data-testid="stWidgetLabel"] p {{ font-size: 1.12rem !important; font-weight: 600 !important;
                                      color: {NAVY_2} !important; }}
@@ -175,6 +191,9 @@ st.markdown(
                                           box-shadow: 0 4px 16px rgba(240,90,40,.35); }}
   [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p {{ font-size: 1.5rem !important; font-weight: 800 !important; }}
   .section-title {{ font-size: 1.6rem; font-weight: 800; color: {NAVY}; margin: .2rem 0 .8rem 0; }}
+  .overlay {{ position: fixed; inset: 0; z-index: 999; background: {SAND};
+              display: flex; align-items: center; justify-content: center; padding: 1rem; }}
+  .overlay .card {{ width: min(760px, 100%); margin: 0; }}
   .loading {{ text-align: center; padding: 2.4rem 1.5rem; }}
   .loading-title {{ font-size: 2.2rem; font-weight: 800; color: {NAVY}; }}
   .loading-sub {{ font-size: 1.2rem; color: #50657a; margin: .4rem 0 1.4rem 0; }}
@@ -348,6 +367,83 @@ st.markdown(
 
 model, n_rows = get_model()
 
+# =========================================================================== economics card
+def money(x: float, sign: bool = False) -> str:
+    s = f"${abs(x):,.0f}"
+    if sign:
+        return ("+" if x >= 0 else "−") + s
+    return ("−" if x < 0 else "") + s
+
+
+def remember_fire_cost() -> None:
+    ss.missed_fire_cost_saved = ss.missed_fire_cost
+
+
+def tile(kind: str, head: str, value: str, text: str) -> str:
+    return (f'<div class="econ-tile econ-{kind}"><div class="econ-head">{head}</div>'
+            f'<div class="econ-value">{value}</div><div class="econ-text">{text}</div></div>')
+
+
+def render_economics(prob: float, alert: bool) -> None:
+    """What is at stake today: cost of the alert if no fire, money saved if a fire starts."""
+    if "missed_fire_cost" not in ss:  # keep the chosen value across screens
+        ss.missed_fire_cost = ss.get("missed_fire_cost_saved", DEFAULT_MISSED_FIRE_COST)
+    fire_cost = float(ss.missed_fire_cost)
+    e = decision_economics(prob, fire_cost)
+    pct = f"{prob:.0%}"
+    be = f"{e['break_even_risk']:.0%}"
+
+    if alert:
+        title = "💰 What does this alert cost, and what can it save?"
+        tiles = [
+            tile("cost", "If no fire starts (false alarm)", money(-e["cost_if_no_fire"]),
+                 "A strike team of 5 engines on standby for 24 h, for nothing."),
+            tile("save", "If a fire does start", f"{money(e['saved_if_fire'], sign=True)} saved",
+                 f"Crews are ready: we avoid a {money(fire_cost)} fire nobody was prepared for, "
+                 f"minus the {money(STANDBY_COST)} standby cost."),
+        ]
+        ev = e["expected_value_of_alert"]
+        verdict = (f"Alerting pays off on average from {be} risk."
+                   if ev >= 0 else
+                   f"Just below the {be} break-even: we still alert, because {money(fire_cost)} "
+                   "counts firefighting only, not burnt homes and land.")
+        tiles.append(tile("avg", "On average, for a day like today", money(ev, sign=True),
+                          f"{pct} × {money(fire_cost)} − {money(STANDBY_COST)}. {verdict}"))
+    else:
+        title = "💰 No alert: what is at stake?"
+        loss = e["expected_loss_without_alert"]
+        tiles = [
+            tile("save", "No crews mobilised", "$0 spent",
+                 f"We save the {money(STANDBY_COST)} that a strike team on standby would cost."),
+            tile("cost", "If a fire starts anyway", money(-fire_cost),
+                 "A fire nobody was prepared for (firefighting cost only)."),
+        ]
+        verdict = (f"Less than the {money(STANDBY_COST)} an alert would cost: not alerting is the cheaper choice."
+                   if loss < STANDBY_COST else
+                   f"More than the {money(STANDBY_COST)} an alert would cost: alerting pays off from {be} risk.")
+        tiles.append(tile("avg", "Expected loss, for a day like today", money(-loss),
+                          f"{pct} × {money(fire_cost)}. {verdict}"))
+
+    st.markdown(
+        f'<div class="card"><div class="risk-label" style="margin-bottom:.9rem;">{title}</div>'
+        f'<div class="econ">{"".join(tiles)}</div></div>',
+        unsafe_allow_html=True,
+    )
+    c1, _ = st.columns([1.3, 1])
+    with c1:
+        st.number_input(
+            "Assumption: cost of a fire nobody was prepared for ($)",
+            min_value=10_000, max_value=10_000_000, step=10_000, format="%d",
+            key="missed_fire_cost", on_change=remember_fire_cost,
+        )
+    st.caption((
+        f"Illustrative estimate. Alert cost: Cal OES 2025 rates (Type III engine $156.74/h + "
+        f"4 firefighters at $44.97/h overtime) × 5 engines × 24 h = {money(STANDBY_COST)}. "
+        f"Default fire cost {money(DEFAULT_MISSED_FIRE_COST)}: average firefighting cost per fire "
+        "in California in 2018 (≈ $1B for ≈ 8,500 fires), damages not included."
+    ).replace("$", "\\$"))  # "$...$" would otherwise be read as a math formula
+
+
 # =========================================================================== screens
 def render_form_screen() -> None:
     for k in INPUT_KEYS:  # restore values after coming back from the result screen
@@ -388,7 +484,21 @@ def render_form_screen() -> None:
     render_info()
 
 
-def render_result(slot) -> None:
+def scroll_to_top() -> None:
+    """The result screen should open at the top, not where the Predict button was."""
+    ss.scroll_nonce = ss.get("scroll_nonce", 0) + 1  # new content -> the script runs again
+    components.html(
+        f"""<script>/* {ss.scroll_nonce} */
+        const doc = window.parent.document;
+        doc.querySelectorAll('[data-testid="stMain"], [data-testid="stAppViewContainer"], section.main')
+           .forEach(el => el.scrollTo({{top: 0}}));
+        window.parent.scrollTo({{top: 0}});
+        </script>""",
+        height=0,
+    )
+
+
+def render_result() -> None:
     w = ss.saved
     rain_in = w["rain"] / MM_PER_INCH
     rain_7_days_in = w["rain_7_days"] / MM_PER_INCH
@@ -399,13 +509,20 @@ def render_result(slot) -> None:
 
     if ss.animate:  # short "the forest is voting" animation, only right after Predict
         ss.animate = False
+        # Shown as a full-screen overlay, so the previous screen (which Streamlit keeps on the
+        # page, greyed out, until the new one is drawn) stays hidden during the animation.
+        overlay = st.empty()
         for shown in range(0, N_TREES + 1, 20):
-            slot.markdown(forest_loading_html(tree_probs, shown), unsafe_allow_html=True)
+            overlay.markdown(
+                f'<div class="overlay">{forest_loading_html(tree_probs, shown)}</div>',
+                unsafe_allow_html=True,
+            )
             time.sleep(ANIMATION_SECONDS / (N_TREES / 20))
         time.sleep(0.4)
+        overlay.empty()
+        scroll_to_top()
 
-    with slot.container():
-        render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_days_in)
+    render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_days_in)
 
 
 def render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_days_in) -> None:
@@ -453,17 +570,14 @@ def render_result_screen(w, prob, trees_fire, tree_probs, day, rain_in, rain_7_d
 """,
             unsafe_allow_html=True,
         )
+    render_economics(risk_pct / 100, alert)  # same rounded risk as displayed, so the sums add up
     render_info()
 
 
-# Each screen lives in one single slot: the animation and the result fully replace the form
-# (otherwise Streamlit keeps showing the old screen, greyed out, while the next one loads).
-slot = st.empty()
 if ss.page == "form":
-    with slot.container():
-        render_form_screen()
+    render_form_screen()
 else:
-    render_result(slot)
+    render_result()
 
 st.markdown(
     '<div class="footer">Data: Yavas et al. (2025), California Weather and Fire Prediction Dataset '

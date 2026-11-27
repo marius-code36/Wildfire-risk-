@@ -71,6 +71,14 @@ risks of almost 50%.
 **Alert threshold: 30%.** In our tests this threshold catches 83% of fire days. It is set low on
 purpose: a missed fire costs far more than a false alarm.
 
+**What is at stake (result screen)**: one alert = a strike team of 5 Type III engines on
+standby for 24 h = 5 × 24 h × ($156.74 + 4 × $44.97) = **$40,394** (Cal OES 2025 rates). That is
+the cost of a false alarm. If a fire does start, the alert avoids the cost of a fire nobody was
+prepared for, set by default to **$120,000** (average firefighting cost per fire in California in
+2018, ≈ $1B for ≈ 8,500 fires, damages not included) and adjustable on screen. Saving if a fire
+starts = $120,000 − $40,394 = $79,606; expected value of alerting = risk × $120,000 − $40,394, which
+is positive from a 34% risk. Illustrative estimates.
+
 **Limit**: winter fires driven by Santa Ana winds are often missed. The model advises, humans decide.
 
 ## Files
